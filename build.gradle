@@ -1629,7 +1629,6 @@ project(':streams:test-utils') {
 
   javadoc {
     include "**/org/apache/kafka/streams/test/**"
-    exclude "**/org/apache/kafka/streams/internals/**", "**/org/apache/kafka/streams/**/internals/**"
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
