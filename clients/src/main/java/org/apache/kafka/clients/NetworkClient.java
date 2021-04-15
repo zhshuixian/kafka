@@ -555,7 +555,7 @@ public class NetworkClient implements KafkaClient {
             completeResponses(responses);
             return responses;
         }
-
+        // 这里是去集群拉取元数据信息的
         long metadataTimeout = metadataUpdater.maybeUpdate(now);
         try {
             this.selector.poll(Utils.min(timeout, metadataTimeout, defaultRequestTimeoutMs));

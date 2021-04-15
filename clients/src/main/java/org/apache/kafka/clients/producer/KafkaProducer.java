@@ -342,7 +342,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 logContext = new LogContext(String.format("[Producer clientId=%s, transactionalId=%s] ", clientId, transactionalId));
             log = logContext.logger(KafkaProducer.class);
             log.trace("Starting the Kafka producer");
-
+            // Kafka 客户端监控的 Metrics
             Map<String, String> metricTags = Collections.singletonMap("client-id", clientId);
             MetricConfig metricConfig = new MetricConfig().samples(config.getInt(ProducerConfig.METRICS_NUM_SAMPLES_CONFIG))
                     .timeWindow(config.getLong(ProducerConfig.METRICS_SAMPLE_WINDOW_MS_CONFIG), TimeUnit.MILLISECONDS)
@@ -357,11 +357,14 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             MetricsContext metricsContext = new KafkaMetricsContext(JMX_PREFIX,
                     config.originalsWithPrefix(CommonClientConfigs.METRICS_CONTEXT_PREFIX));
             this.metrics = new Metrics(metricConfig, reporters, time, metricsContext);
+            // 分区器
             this.partitioner = config.getConfiguredInstance(
                     ProducerConfig.PARTITIONER_CLASS_CONFIG,
                     Partitioner.class,
                     Collections.singletonMap(ProducerConfig.CLIENT_ID_CONFIG, clientId));
+            // retry.backoff.ms 消息发送失败后的重试次数
             long retryBackoffMs = config.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG);
+            // Key 和 Value 的系列化方式
             if (keySerializer == null) {
                 this.keySerializer = config.getConfiguredInstance(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
                                                                                          Serializer.class);
@@ -378,7 +381,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 config.ignore(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG);
                 this.valueSerializer = valueSerializer;
             }
-
+            // Kafka 拦截器
             List<ProducerInterceptor<K, V>> interceptorList = (List) config.getConfiguredInstances(
                     ProducerConfig.INTERCEPTOR_CLASSES_CONFIG,
                     ProducerInterceptor.class,
@@ -392,12 +395,13 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.maxRequestSize = config.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG);
             this.totalMemorySize = config.getLong(ProducerConfig.BUFFER_MEMORY_CONFIG);
             this.compressionType = CompressionType.forName(config.getString(ProducerConfig.COMPRESSION_TYPE_CONFIG));
-
+            // 控制多个方法的最大阻塞时间
             this.maxBlockTimeMs = config.getLong(ProducerConfig.MAX_BLOCK_MS_CONFIG);
             int deliveryTimeoutMs = configureDeliveryTimeout(config, log);
 
             this.apiVersions = new ApiVersions();
             this.transactionManager = configureTransactionState(config, logContext);
+            // accumulator “生产者的消息累积器”，功能就是将多条消息先缓存起来，一批批的发送，这样可以提高系统的吞吐量
             this.accumulator = new RecordAccumulator(logContext,
                     config.getInt(ProducerConfig.BATCH_SIZE_CONFIG),
                     this.compressionType,
@@ -449,6 +453,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         ProducerMetrics metricsRegistry = new ProducerMetrics(this.metrics);
         Sensor throttleTimeSensor = Sender.throttleTimeSensor(metricsRegistry.senderMetrics);
         KafkaClient client = kafkaClient != null ? kafkaClient : new NetworkClient(
+                // connections.max.idle.ms 指定时间后关闭空闲连接
                 new Selector(producerConfig.getLong(ProducerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG),
                         this.metrics, time, "producer", channelBuilder, logContext),
                 metadata,
@@ -484,10 +489,21 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 apiVersions);
     }
 
+    /**
+     * linger.ms 消息是成批发送的，如果一个批次满 batch.size 了或者等了超过 linger.ms 时间了则表示可以发送出去了
+     * @param config  配置
+     * @return        linger.ms
+     */
     private static int lingerMs(ProducerConfig config) {
         return (int) Math.min(config.getLong(ProducerConfig.LINGER_MS_CONFIG), Integer.MAX_VALUE);
     }
 
+    /**
+     * delivery.timeout.ms ：消息发出以后，超过多少时间还没有收到 Broker 的 ack 响应则认为消息发送失败
+     * 要大于或者等于 request.timeout.ms + linger.ms，如果没有配置的情况下，则这个和就是默认值
+     * @param config 配置
+     * @return       delivery.timeout.ms
+     */
     private static int configureDeliveryTimeout(ProducerConfig config, Logger log) {
         int deliveryTimeoutMs = config.getInt(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG);
         int lingerMs = lingerMs(config);
